@@ -1,35 +1,55 @@
 FROM node:22-bookworm
 
-# Install Bun (required for build scripts)
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
+RUN apt-get update && apt-get install -y sudo socat && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable
+RUN useradd -m -s /bin/bash linuxbrew && \
+    echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+USER linuxbrew
+WORKDIR /home/linuxbrew
+
+RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
+
+RUN brew install Hyaxia/tap/blogwatcher && \
+	brew install uv
+
+USER root
+
+# Install chrome
+    # Download and install Google Chrome
+RUN apt-get update && \
+    curl -L -o /tmp/google-chrome-stable_current_amd64.deb \
+        https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    apt-get install -y --fix-broken /tmp/google-chrome-stable_current_amd64.deb && \
+    # Clean up
+    rm -f /tmp/google-chrome-stable_current_amd64.deb && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Example binary 1: Gmail CLI
+RUN curl -L https://github.com/steipete/gogcli/releases/download/v0.6.1/gogcli_0.6.1_linux_amd64.tar.gz \
+  | tar -xz -C /usr/local/bin && chmod +x /usr/local/bin/gog
+
+# Add more binaries below using the same pattern
 
 WORKDIR /app
-
-ARG CLAWDBOT_DOCKER_APT_PACKAGES=""
-RUN if [ -n "$CLAWDBOT_DOCKER_APT_PACKAGES" ]; then \
-      apt-get update && \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $CLAWDBOT_DOCKER_APT_PACKAGES && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
-    fi
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY ui/package.json ./ui/package.json
-COPY patches ./patches
 COPY scripts ./scripts
 
+RUN corepack enable
 RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
-# Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
-ENV CLAWDBOT_PREFER_PNPM=1
 RUN pnpm ui:install
 RUN pnpm ui:build
+RUN npm i -g clawdhub undici
+
+# Install skills in the container itself
+#RUN clawdhub install self-improving-agent
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/index.js"]
+CMD ["node","dist/index.js"]
