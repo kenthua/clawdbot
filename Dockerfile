@@ -1,6 +1,6 @@
 FROM node:22-bookworm
 
-RUN apt-get update && apt-get install -y sudo socat && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y sudo socat jq && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash linuxbrew && \
     echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
