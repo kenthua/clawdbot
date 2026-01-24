@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { peekSystemEvents, resetSystemEventsForTest } from "../infra/system-events.js";
 import { getFinishedSession, resetProcessRegistryForTests } from "./bash-process-registry.js";
@@ -150,6 +152,8 @@ describe("exec tool backgrounding", () => {
   it("rejects elevated requests when not allowed", async () => {
     const customBash = createExecTool({
       elevated: { enabled: true, allowed: false, defaultLevel: "off" },
+      messageProvider: "telegram",
+      sessionKey: "agent:main:main",
     });
 
     await expect(
@@ -157,7 +161,7 @@ describe("exec tool backgrounding", () => {
         command: "echo hi",
         elevated: true,
       }),
-    ).rejects.toThrow("tools.elevated.allowFrom.<provider>");
+    ).rejects.toThrow("Context: provider=telegram session=agent:main:main");
   });
 
   it("does not default to elevated when not allowed", async () => {
@@ -270,6 +274,34 @@ describe("exec notifyOnExit", () => {
     expect(finished).toBeTruthy();
     const events = peekSystemEvents("agent:main:main");
     expect(events.some((event) => event.includes(sessionId.slice(0, 8)))).toBe(true);
+  });
+});
+
+describe("exec PATH handling", () => {
+  const originalPath = process.env.PATH;
+  const originalShell = process.env.SHELL;
+
+  beforeEach(() => {
+    if (!isWin) process.env.SHELL = "/bin/bash";
+  });
+
+  afterEach(() => {
+    process.env.PATH = originalPath;
+    if (!isWin) process.env.SHELL = originalShell;
+  });
+
+  it("prepends configured path entries", async () => {
+    const basePath = isWin ? "C:\\Windows\\System32" : "/usr/bin";
+    const prepend = isWin ? ["C:\\custom\\bin", "C:\\oss\\bin"] : ["/custom/bin", "/opt/oss/bin"];
+    process.env.PATH = basePath;
+
+    const tool = createExecTool({ pathPrepend: prepend });
+    const result = await tool.execute("call1", {
+      command: isWin ? "Write-Output $env:PATH" : "echo $PATH",
+    });
+
+    const text = normalizeText(result.content.find((c) => c.type === "text")?.text);
+    expect(text).toBe([...prepend, basePath].join(path.delimiter));
   });
 });
 

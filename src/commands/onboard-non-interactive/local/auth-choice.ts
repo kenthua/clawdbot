@@ -13,6 +13,7 @@ import { buildTokenProfileId, validateAnthropicSetupToken } from "../../auth-tok
 import { applyGoogleGeminiModelDefault } from "../../google-gemini-model-default.js";
 import {
   applyAuthProfileConfig,
+  applyKimiCodeConfig,
   applyMinimaxApiConfig,
   applyMinimaxConfig,
   applyMoonshotConfig,
@@ -23,6 +24,7 @@ import {
   applyZaiConfig,
   setAnthropicApiKey,
   setGeminiApiKey,
+  setKimiCodeApiKey,
   setMinimaxApiKey,
   setMoonshotApiKey,
   setOpencodeZenApiKey,
@@ -34,6 +36,7 @@ import {
 import type { AuthChoice, OnboardOptions } from "../../onboard-types.js";
 import { applyOpenAICodexModelDefault } from "../../openai-codex-model-default.js";
 import { resolveNonInteractiveApiKey } from "../api-keys.js";
+import { shortenHomePath } from "../../../utils.js";
 
 export async function applyNonInteractiveAuthChoice(params: {
   nextConfig: ClawdbotConfig;
@@ -170,7 +173,7 @@ export async function applyNonInteractiveAuthChoice(params: {
     const key = resolved.key;
     const result = upsertSharedEnvVar({ key: "OPENAI_API_KEY", value: key });
     process.env.OPENAI_API_KEY = key;
-    runtime.log(`Saved OPENAI_API_KEY to ${result.path}`);
+    runtime.log(`Saved OPENAI_API_KEY to ${shortenHomePath(result.path)}`);
     return nextConfig;
   }
 
@@ -229,6 +232,25 @@ export async function applyNonInteractiveAuthChoice(params: {
       mode: "api_key",
     });
     return applyMoonshotConfig(nextConfig);
+  }
+
+  if (authChoice === "kimi-code-api-key") {
+    const resolved = await resolveNonInteractiveApiKey({
+      provider: "kimi-code",
+      cfg: baseConfig,
+      flagValue: opts.kimiCodeApiKey,
+      flagName: "--kimi-code-api-key",
+      envVar: "KIMICODE_API_KEY",
+      runtime,
+    });
+    if (!resolved) return null;
+    if (resolved.source !== "profile") await setKimiCodeApiKey(resolved.key);
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "kimi-code:default",
+      provider: "kimi-code",
+      mode: "api_key",
+    });
+    return applyKimiCodeConfig(nextConfig);
   }
 
   if (authChoice === "synthetic-api-key") {
@@ -331,7 +353,12 @@ export async function applyNonInteractiveAuthChoice(params: {
     return applyOpencodeZenConfig(nextConfig);
   }
 
-  if (authChoice === "oauth" || authChoice === "chutes" || authChoice === "openai-codex") {
+  if (
+    authChoice === "oauth" ||
+    authChoice === "chutes" ||
+    authChoice === "openai-codex" ||
+    authChoice === "qwen-portal"
+  ) {
     runtime.error("OAuth requires interactive mode.");
     runtime.exit(1);
     return null;
